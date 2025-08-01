@@ -1,0 +1,13 @@
+version: 0.4.6
+
+namespace: scrum-poker
+project: scrum-poker
+
+services:
+  - name: runtime
+    image: ghcr.io/markmorcos/scrum-poker-runtime
+    port: 80
+    ingress:
+      host: spoker.morcos.tech
+      path: /
+      pathType: Prefix
