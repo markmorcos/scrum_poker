@@ -227,7 +227,13 @@ enum class MessageType {
         USER_LEFT,
 
         /** Server error message to client */
-        ERROR
+        ERROR,
+
+        /** Keepalive ping from client or server */
+        PING,
+
+        /** Keepalive pong response */
+        PONG
 }
 
 /**

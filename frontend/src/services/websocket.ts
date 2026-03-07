@@ -44,18 +44,21 @@ import { MessageType, WebSocketMessage } from '../types';
 export class WebSocketService {
   /** The active WebSocket connection instance */
   private ws: WebSocket | null = null;
-  
+
   /** Map of message type to handler function for incoming messages */
   private messageHandlers: Map<MessageType, (payload: any) => void> = new Map();
-  
+
   /** Current number of reconnection attempts */
   private reconnectAttempts = 0;
-  
+
   /** Maximum number of reconnection attempts before giving up */
   private maxReconnectAttempts = 5;
-  
+
   /** Base delay in milliseconds for reconnection attempts */
   private reconnectDelay = 1000;
+
+  /** Interval ID for keepalive pings */
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Establishes a WebSocket connection to the specified URL
@@ -87,6 +90,7 @@ export class WebSocketService {
         this.ws.onopen = () => {
           console.log('[WebSocket] Connected successfully');
           this.reconnectAttempts = 0; // Reset reconnect counter on successful connection
+          this.startPing();
           resolve();
         };
 
@@ -127,6 +131,7 @@ export class WebSocketService {
         this.ws.onclose = (event) => {
           console.log('[WebSocket] Disconnected - Code:', event.code, 'Reason:', event.reason);
           console.log('[WebSocket] Clean:', event.wasClean);
+          this.stopPing();
           this.attemptReconnect(url);
         };
       } catch (error) {
@@ -164,9 +169,28 @@ export class WebSocketService {
    * or when the connection is no longer needed.
    */
   disconnect() {
+    this.stopPing();
     if (this.ws) {
       this.ws.close();
       this.ws = null;
+    }
+  }
+
+  /** Starts sending keepalive pings every 30 seconds */
+  private startPing() {
+    this.stopPing();
+    this.pingInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: MessageType.PING, payload: {} }));
+      }
+    }, 30000);
+  }
+
+  /** Stops the keepalive ping interval */
+  private stopPing() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
     }
   }
 

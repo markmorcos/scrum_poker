@@ -101,7 +101,13 @@ export enum MessageType {
   ROOM_UPDATE = 'ROOM_UPDATE',
   
   /** Notification that a user has left the room */
-  USER_LEFT = 'USER_LEFT'
+  USER_LEFT = 'USER_LEFT',
+
+  /** Keepalive ping */
+  PING = 'PING',
+
+  /** Keepalive pong response */
+  PONG = 'PONG'
 }
 
 /**
