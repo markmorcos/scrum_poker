@@ -148,7 +148,7 @@ export interface WebSocketMessage {
  * Note: These values can be modified to customize the available
  * estimation options for different teams or methodologies.
  */
-export const FIBONACCI_VALUES = ['0', '0.5', '1', '2', '3', '5', '8', '13', '20', '40'];
+export const FIBONACCI_VALUES = ['0', '0.5', '1', '2', '3', '5', '8', '13', '20'];
 
 /**
  * SPECIAL_VALUES - Non-Numerical Estimation Options
@@ -165,4 +165,4 @@ export const FIBONACCI_VALUES = ['0', '0.5', '1', '2', '3', '5', '8', '13', '20'
  * provide a numerical estimate due to lack of information or when
  * the story is too large/complex for estimation.
  */
-export const SPECIAL_VALUES = ['?', '☕']; 
+export const SPECIAL_VALUES = ['?', '☕', '🍌']; 
