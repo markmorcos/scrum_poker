@@ -340,8 +340,8 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({
   // Keyboard support for card selection (1, 2, 3, 5, 8)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Only handle if we're connected and in a room
-      if (!userId || !roomId || !isConnected) return;
+      // Only handle if we're in a room with a valid user
+      if (!userId || !roomId) return;
 
       // Don't handle if user is typing in an input/textarea
       const target = event.target as HTMLElement;
@@ -374,7 +374,7 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [userId, roomId, isConnected, handleCardSelect]);
+  }, [userId, roomId, handleCardSelect]);
 
   const handleShowEstimates = () => {
     if (!roomId) return;
