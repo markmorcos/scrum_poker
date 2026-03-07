@@ -223,18 +223,6 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({
     }
   };
 
-  const getRetryPhaseInfo = (attemptNumber: number) => {
-    if (attemptNumber < 10) {
-      return { phase: 1, remaining: 10 - attemptNumber, delay: 10 };
-    } else if (attemptNumber < 20) {
-      return { phase: 2, remaining: 20 - attemptNumber, delay: 30 };
-    } else if (attemptNumber < 30) {
-      return { phase: 3, remaining: 30 - attemptNumber, delay: 60 };
-    } else {
-      return { phase: 4, remaining: 0, delay: 0 };
-    }
-  };
-
   const handleRetryConnection = () => {
     // Reset error states
     setConnectionError(null);
@@ -406,152 +394,64 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({
   if (!isConnected || !roomState) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center max-w-md">
+        <div className="text-center max-w-sm space-y-6">
           {connectionError && showError ? (
-            <>
-              <div className="mb-4">
-                <svg
-                  className="mx-auto h-12 w-12 text-red-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                  />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text mb-2">
-                Connection Error
-              </h3>
-              <p className="text-gray-600 dark:text-dark-text-secondary mb-4">
-                {connectionError}
-              </p>
-              <div className="space-y-4">
-                {/* Auto-retry status and countdown */}
-                {autoRetryEnabled && (
-                  <>
-                    {retryCountdown > 0 ? (
-                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
-                        <div className="flex items-center justify-center space-x-2 text-blue-600 dark:text-blue-400">
-                          <div className="animate-pulse">🔄</div>
-                          <span className="text-sm font-medium">
-                            Auto-retry in {retryCountdown} seconds...
-                          </span>
-                        </div>
-
-                        {/* Retry phase information */}
-                        {(() => {
-                          const phaseInfo =
-                            getRetryPhaseInfo(totalRetryAttempts);
-                          const currentDelay =
-                            getRetryDelay(totalRetryAttempts);
-                          return (
-                            <div className="text-xs text-blue-500 dark:text-blue-300 text-center mt-1">
-                              Phase {phaseInfo.phase}/3: {phaseInfo.remaining}{" "}
-                              attempts remaining at {currentDelay}s intervals
-                            </div>
-                          );
-                        })()}
-
-                        {/* Progress bar */}
-                        <div className="w-full bg-blue-100 dark:bg-blue-800 rounded-full h-1.5 mt-2">
-                          <div
-                            className="bg-blue-600 dark:bg-blue-400 h-1.5 rounded-full transition-all duration-1000 ease-linear"
-                            style={{
-                              width: `${
-                                (((getRetryDelay(totalRetryAttempts) || 10) -
-                                  retryCountdown) /
-                                  (getRetryDelay(totalRetryAttempts) || 10)) *
-                                100
-                              }%`,
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                    ) : getRetryDelay(totalRetryAttempts) === null ? (
-                      <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
-                        <div className="flex items-center justify-center space-x-2 text-red-600 dark:text-red-400">
-                          <span>⛔</span>
-                          <span className="text-sm font-medium">
-                            Auto-retry stopped after 30 attempts
-                          </span>
-                        </div>
-                        <div className="text-xs text-red-500 dark:text-red-300 text-center mt-1">
-                          Manual retry available - this will reset the retry
-                          counter
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                )}
-
-                {/* Manual retry button */}
-                <button
-                  onClick={handleManualRetry}
-                  className="bg-blue-600 dark:bg-blue-700 text-white px-4 py-2 rounded hover:bg-blue-700 dark:hover:bg-blue-800 transition-colors"
-                >
-                  {retryCountdown > 0
-                    ? "Try Again Now"
-                    : getRetryDelay(totalRetryAttempts) === null
-                    ? "Try Again (Reset Counter)"
-                    : "Try Again"}
-                </button>
-
-                {/* Auto-retry toggle */}
-                <div className="flex items-center justify-center space-x-2">
-                  <button
-                    onClick={() => setAutoRetryEnabled(!autoRetryEnabled)}
-                    className={`flex items-center space-x-2 text-xs px-3 py-1 rounded-full transition-colors ${
-                      autoRetryEnabled
-                        ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
-                        : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
-                    }`}
-                  >
-                    <span>{autoRetryEnabled ? "✅" : "⏸️"}</span>
-                    <span>Auto-retry (10s→30s→60s)</span>
-                  </button>
-                </div>
-
-                {/* Retry strategy explanation */}
-                {autoRetryEnabled && (
-                  <div className="text-xs text-gray-400 dark:text-gray-500 text-center">
-                    Strategy: 10×10s, then 10×30s, then 10×60s (30 total
-                    attempts)
-                  </div>
-                )}
-
-                <div className="text-sm text-gray-500 dark:text-dark-text-secondary">
-                  <p>💤 The backend may be sleeping to save resources.</p>
-                  <p>
-                    🚀 It will wake up automatically when you retry (may take
-                    15-30 seconds).
-                  </p>
-                  <p>
-                    ⏱️ Your name "{userName}" will be preserved during retry.
-                  </p>
-                </div>
-                {connectionAttempts > 1 && (
-                  <p className="text-xs text-gray-400 dark:text-dark-text-secondary">
-                    Connection attempts: {connectionAttempts}
-                  </p>
-                )}
-              </div>
-            </>
+            <div className="text-5xl animate-bounce">😴</div>
           ) : (
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          )}
+
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text mb-2">
+              {connectionError && showError
+                ? "Waking up the server..."
+                : "Connecting to room..."}
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-dark-text-secondary">
+              {connectionError && showError
+                ? "The server is starting up. This usually takes 1\u20132 minutes."
+                : "Hang tight, connecting you now."}
+            </p>
+          </div>
+
+          {connectionError && showError && (
             <>
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
-              <p className="mt-4 text-gray-600 dark:text-dark-text-secondary">
-                Connecting to room...
-              </p>
-              {connectionAttempts > 1 && (
-                <p className="mt-2 text-sm text-gray-400 dark:text-dark-text-secondary">
-                  Attempt {connectionAttempts}...
-                </p>
+              {/* Progress bar */}
+              {autoRetryEnabled && retryCountdown > 0 && (
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                  <div
+                    className="bg-blue-600 dark:bg-blue-400 h-1.5 rounded-full transition-all duration-1000 ease-linear"
+                    style={{
+                      width: `${
+                        (((getRetryDelay(totalRetryAttempts) || 10) -
+                          retryCountdown) /
+                          (getRetryDelay(totalRetryAttempts) || 10)) *
+                        100
+                      }%`,
+                    }}
+                  ></div>
+                </div>
               )}
+
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {autoRetryEnabled && retryCountdown > 0
+                  ? `Retrying in ${retryCountdown}s...`
+                  : getRetryDelay(totalRetryAttempts) === null
+                  ? "Auto-retry exhausted."
+                  : "Retrying..."}
+              </p>
+
+              <div className="text-sm text-gray-500 dark:text-dark-text-secondary space-y-1">
+                <p>{"\uD83D\uDCA4"} The server is sleeping to save resources.</p>
+                <p>{"\u23F1\uFE0F"} Your name "{userName}" will be preserved.</p>
+              </div>
+
+              <button
+                onClick={handleManualRetry}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Try now
+              </button>
             </>
           )}
         </div>
