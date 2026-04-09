@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import confetti from "canvas-confetti";
 import { PokerCard } from "../components/PokerCard";
 import { UserTable } from "../components/UserTable";
 import { getWebSocketUrl } from "../config";
@@ -35,6 +36,35 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({
   const [totalRetryAttempts, setTotalRetryAttempts] = useState(0);
   const [showCopiedNotification, setShowCopiedNotification] = useState(false);
   const [showReconnectingBanner, setShowReconnectingBanner] = useState(false);
+  const prevShowEstimatesRef = useRef(false);
+
+  // Fire confetti when estimates are revealed and all voters agree
+  useEffect(() => {
+    const wasHidden = !prevShowEstimatesRef.current;
+    const isNowShown = roomState?.showEstimates ?? false;
+    prevShowEstimatesRef.current = isNowShown;
+
+    if (!wasHidden || !isNowShown) return;
+
+    const voters = roomState!.users.filter((u) => u.hasVoted);
+    if (voters.length === 0) return;
+
+    const allSame = voters.every((u) => u.estimate === voters[0].estimate);
+    if (!allSame) return;
+
+    const duration = 3000;
+    const end = Date.now() + duration;
+    const interval = setInterval(() => {
+      const timeLeft = end - Date.now();
+      if (timeLeft <= 0) return clearInterval(interval);
+
+      const count = 50 * (timeLeft / duration);
+      confetti({ startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999, particleCount: count, origin: { x: Math.random() * 0.2 + 0.1, y: Math.random() - 0.2 } });
+      confetti({ startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999, particleCount: count, origin: { x: Math.random() * 0.2 + 0.7, y: Math.random() - 0.2 } });
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [roomState]);
 
   // Store room context in localStorage for recovery after disconnection
   useEffect(() => {
