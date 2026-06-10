@@ -32,6 +32,7 @@ import com.scrumpoker.model.*
 import com.scrumpoker.service.RoomService
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.web.socket.CloseStatus
 import org.springframework.web.socket.TextMessage
@@ -155,6 +156,8 @@ class ScrumPokerWebSocketHandler(
                 MessageType.HIDE_ESTIMATES -> handleHideEstimates(session, webSocketMessage.payload)
                 MessageType.DELETE_ESTIMATES ->
                         handleDeleteEstimates(session, webSocketMessage.payload)
+                MessageType.PING -> handlePing(session)
+                MessageType.PONG -> { /* Client acknowledged our ping, connection is alive */ }
                 else -> {
                     // Unknown message type - log but don't crash
                     println("[WebSocket] Unknown message type: ${webSocketMessage.type}")
@@ -200,7 +203,9 @@ class ScrumPokerWebSocketHandler(
         try {
             // Create user and add to room via business logic (may throw exception if limits
             // exceeded)
-            val user = roomService.joinRoom(joinRequest.name, joinRequest.roomId)
+            // Pass existing userId if provided (for multi-tab support)
+            val user =
+                    roomService.joinRoom(joinRequest.name, joinRequest.roomId, joinRequest.userId)
 
             // Register session for message delivery
             sessions[user.id] = session
@@ -393,6 +398,36 @@ class ScrumPokerWebSocketHandler(
             } catch (e: Exception) {
                 println("[WebSocket] Error sending message: ${e.message}")
             }
+        }
+    }
+
+    /**
+     * Handles PING message from client - responds with PONG
+     */
+    private fun handlePing(session: WebSocketSession) {
+        sendMessage(session, WebSocketMessage(type = MessageType.PONG, payload = emptyMap<String, Any>()))
+    }
+
+    /**
+     * Sends PING to all connected sessions every 30 seconds to keep connections alive
+     * through Railway's proxy (which kills idle WebSocket connections after ~5-15 min)
+     */
+    @Scheduled(fixedRate = 30000)
+    fun pingAllSessions() {
+        val pingMessage = WebSocketMessage(type = MessageType.PING, payload = emptyMap<String, Any>())
+        var sent = 0
+        sessions.values.forEach { session ->
+            if (session.isOpen) {
+                try {
+                    session.sendMessage(TextMessage(objectMapper.writeValueAsString(pingMessage)))
+                    sent++
+                } catch (e: Exception) {
+                    logger.debug("Failed to send ping to session {}: {}", session.id, e.message)
+                }
+            }
+        }
+        if (sent > 0) {
+            logger.debug("Sent keepalive ping to {} sessions", sent)
         }
     }
 

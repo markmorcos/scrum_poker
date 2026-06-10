@@ -31,13 +31,19 @@ package com.scrumpoker.model
  *
  * The class uses a mix of immutable and mutable properties:
  * - Immutable: id, name, roomId (these don't change after creation)
- * - Mutable: estimate, hasVoted (these change during the estimation process)
+ * - Mutable: estimate, hasVoted, disconnectedAt (these change during the estimation process)
+ *
+ * Grace Period Feature: When a user disconnects (closes tab, switches browser, etc.), they are
+ * marked with disconnectedAt timestamp instead of being immediately removed. This allows them to
+ * reconnect within a grace period (default 5 minutes) and resume their session without losing their
+ * vote or room state.
  *
  * @property id Unique identifier for the user (UUID)
  * @property name Display name chosen by the user
  * @property roomId Identifier of the room the user belongs to
  * @property estimate The user's story point estimate (null if not voted)
  * @property hasVoted Boolean flag indicating if user has submitted an estimate
+ * @property disconnectedAt Timestamp when user disconnected (null if connected)
  */
 data class User(
         /** Unique identifier for the user, generated when joining a room */
@@ -53,7 +59,10 @@ data class User(
         var estimate: String? = null,
 
         /** Whether the user has submitted an estimate for the current round */
-        var hasVoted: Boolean = false
+        var hasVoted: Boolean = false,
+
+        /** Timestamp (in milliseconds) when user disconnected, null if currently connected */
+        var disconnectedAt: Long? = null
 )
 
 /**
@@ -88,13 +97,17 @@ data class Room(
  *
  * @property name The display name the user wants to use
  * @property roomId The ID of the room the user wants to join
+ * @property userId Optional existing user ID for rejoining (enables multi-tab support)
  */
 data class JoinRoomRequest(
         /** Display name chosen by the user */
         val name: String,
 
         /** ID of the room to join */
-        val roomId: String
+        val roomId: String,
+
+        /** Optional existing user ID for reconnecting from another tab */
+        val userId: String? = null
 )
 
 /**
@@ -192,29 +205,35 @@ data class UserState(
  * communication protocol between client and server.
  */
 enum class MessageType {
-    /** Client request to join a poker room */
-    JOIN,
+        /** Client request to join a poker room */
+        JOIN,
 
-    /** Client submits their story point estimate */
-    VOTE,
+        /** Client submits their story point estimate */
+        VOTE,
 
-    /** Request to reveal all user estimates */
-    SHOW_ESTIMATES,
+        /** Request to reveal all user estimates */
+        SHOW_ESTIMATES,
 
-    /** Request to hide all user estimates */
-    HIDE_ESTIMATES,
+        /** Request to hide all user estimates */
+        HIDE_ESTIMATES,
 
-    /** Request to delete all estimates and reset voting */
-    DELETE_ESTIMATES,
+        /** Request to delete all estimates and reset voting */
+        DELETE_ESTIMATES,
 
-    /** Server broadcast of updated room state */
-    ROOM_UPDATE,
+        /** Server broadcast of updated room state */
+        ROOM_UPDATE,
 
-    /** Notification that a user has left the room */
-    USER_LEFT,
+        /** Notification that a user has left the room */
+        USER_LEFT,
 
-    /** Server error message to client */
-    ERROR
+        /** Server error message to client */
+        ERROR,
+
+        /** Keepalive ping from client or server */
+        PING,
+
+        /** Keepalive pong response */
+        PONG
 }
 
 /**

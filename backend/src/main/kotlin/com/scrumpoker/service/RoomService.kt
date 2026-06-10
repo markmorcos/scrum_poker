@@ -32,6 +32,7 @@ import com.scrumpoker.model.*
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 
 /**
@@ -85,6 +86,9 @@ class RoomService {
     private val MAX_USERS_PER_ROOM = 50 // Maximum users per room
     private val MAX_TOTAL_USERS = 5000 // Maximum total users across all rooms
 
+    // Grace period for disconnected users (5 minutes in milliseconds)
+    private val DISCONNECT_GRACE_PERIOD_MS = 5 * 60 * 1000L
+
     /** Logs current memory usage for monitoring */
     private fun logMemoryUsage() {
         val totalUsers = userSessions.size
@@ -104,6 +108,35 @@ class RoomService {
         }
         if (totalUsers > MAX_TOTAL_USERS * 0.8) {
             logger.warn("⚠️ User count approaching limit: {}/{}", totalUsers, MAX_TOTAL_USERS)
+        }
+    }
+
+    /**
+     * Scheduled task to clean up users who exceeded grace period
+     *
+     * Runs every minute to check for users who have been disconnected for longer than the grace
+     * period and permanently removes them from the system.
+     */
+    @Scheduled(fixedRate = 60000) // Run every 60 seconds
+    fun cleanupDisconnectedUsers() {
+        val currentTime = System.currentTimeMillis()
+        var cleanedUsers = 0
+
+        // Find users who have been disconnected longer than grace period
+        val expiredUsers =
+                userSessions.values.filter { user ->
+                    user.disconnectedAt != null &&
+                            (currentTime - user.disconnectedAt!!) > DISCONNECT_GRACE_PERIOD_MS
+                }
+
+        // Permanently remove expired users
+        expiredUsers.forEach { user ->
+            permanentlyRemoveUser(user.id)
+            cleanedUsers++
+        }
+
+        if (cleanedUsers > 0) {
+            logger.info("🧹 Grace period cleanup: removed {} expired users", cleanedUsers)
         }
     }
 
@@ -174,25 +207,71 @@ class RoomService {
     }
 
     /**
-     * Adds a new user to a poker room
+     * Adds a new user to a poker room or reconnects a disconnected user
      *
-     * This method handles the complete process of user registration:
-     * 1. Creates a new User with generated UUID
-     * 2. Gets or creates the specified room
-     * 3. Adds the user to the room's participant list
-     * 4. Registers the user in the session tracking map
+     * This method handles the complete process of user registration with reconnection support:
+     * 1. If userId provided, checks if user exists and reconnects (multi-tab support)
+     * 2. Otherwise, checks if a disconnected user with same name exists (within grace period)
+     * 3. If found, reconnects the user (clears disconnectedAt, preserves state)
+     * 4. Otherwise, creates a new User with generated UUID
+     * 5. Gets or creates the specified room
+     * 6. Adds the user to the room's participant list
+     * 7. Registers the user in the session tracking map
      *
-     * The room auto-creation feature simplifies the user experience by eliminating the need for
-     * explicit room creation. Users can join any room by ID, and it will be created automatically
-     * if it doesn't exist.
+     * Multi-Tab Support: If a userId is provided (from localStorage), the method will reconnect to
+     * that existing user instead of creating a duplicate. This allows multiple browser tabs to
+     * share the same user identity.
+     *
+     * Reconnection Feature: If a user disconnects (tab close, network loss) and rejoins within the
+     * grace period, they will reconnect to their existing session, preserving their vote and user
+     * ID. This provides a seamless experience for temporary disconnections.
      *
      * @param name The display name chosen by the user
      * @param roomId The ID of the room to join
-     * @return The created User object with generated ID
+     * @param existingUserId Optional user ID from a previous session (for multi-tab support)
+     * @return The created or reconnected User object with ID
      * @throws IllegalStateException if system limits are exceeded
      */
-    fun joinRoom(name: String, roomId: String): User {
-        // Check system limits to prevent memory exhaustion
+    fun joinRoom(name: String, roomId: String, existingUserId: String? = null): User {
+        // Get existing room or create new one atomically
+        val room = rooms.computeIfAbsent(roomId) { Room(it) }
+
+        // PRIORITY 1: Check if connecting with an existing userId (multi-tab support)
+        if (existingUserId != null) {
+            val existingUser = room.users.find { it.id == existingUserId }
+            if (existingUser != null && existingUser.name == name) {
+                // Reconnect to existing user (multi-tab scenario)
+                existingUser.disconnectedAt = null // Clear disconnection if any
+
+                logger.info(
+                        "🔄 User '{}' reconnected to room '{}' from another tab (User ID: {})",
+                        name,
+                        roomId,
+                        existingUserId
+                )
+
+                return existingUser
+            }
+        }
+
+        // PRIORITY 2: Check if there's a disconnected user with the same name in this room
+        val disconnectedUser = room.users.find { it.name == name && it.disconnectedAt != null }
+
+        if (disconnectedUser != null) {
+            // User is reconnecting within grace period - restore their session
+            disconnectedUser.disconnectedAt = null
+
+            logger.info(
+                    "🔄 User '{}' reconnected to room '{}' (User ID: {}) - Vote preserved",
+                    name,
+                    roomId,
+                    disconnectedUser.id
+            )
+
+            return disconnectedUser
+        }
+
+        // Check system limits to prevent memory exhaustion (only for new users)
         if (rooms.size >= MAX_ROOMS) {
             logger.error(
                     "❌ Cannot create room '{}': maximum room limit {} reached",
@@ -211,20 +290,9 @@ class RoomService {
             throw IllegalStateException("Maximum number of users ($MAX_TOTAL_USERS) reached")
         }
 
-        // Create new user with generated UUID and provided information
-        val user =
-                User(
-                        id = UUID.randomUUID().toString(), // Generate unique ID for the user
-                        name = name, // User's chosen display name
-                        roomId = roomId // Room they're joining
-                )
-
-        // Get existing room or create new one atomically
-        // computeIfAbsent ensures thread-safe room creation
-        val room = rooms.computeIfAbsent(roomId) { Room(it) }
-
-        // Check room capacity
-        if (room.users.size >= MAX_USERS_PER_ROOM) {
+        // Check room capacity (count only connected users)
+        val connectedUsersCount = room.users.count { it.disconnectedAt == null }
+        if (connectedUsersCount >= MAX_USERS_PER_ROOM) {
             logger.error(
                     "❌ Cannot add user '{}' to room '{}': maximum room capacity {} reached",
                     name,
@@ -233,6 +301,14 @@ class RoomService {
             )
             throw IllegalStateException("Room capacity limit ($MAX_USERS_PER_ROOM) reached")
         }
+
+        // Create new user with generated UUID and provided information
+        val user =
+                User(
+                        id = UUID.randomUUID().toString(), // Generate unique ID for the user
+                        name = name, // User's chosen display name
+                        roomId = roomId // Room they're joining
+                )
 
         // Add user to room's participant list
         room.users.add(user)
@@ -257,24 +333,61 @@ class RoomService {
     }
 
     /**
-     * Removes a user from their poker room
+     * Marks a user as disconnected with grace period
      *
-     * This method handles the complete process of removing a user from the system:
+     * This method handles user disconnections with a grace period approach:
      * 1. Finds the user by ID in the session tracking
-     * 2. Removes them from their room's participant list
-     * 3. Removes them from session tracking
-     * 4. Cleans up empty rooms automatically
+     * 2. Marks them as disconnected with current timestamp
+     * 3. Keeps them in room for grace period (5 minutes)
+     * 4. User can reconnect within grace period without losing state
      *
-     * The automatic room cleanup prevents memory leaks and ensures that unused rooms don't persist
-     * in memory indefinitely.
+     * This prevents users from being kicked out when switching tabs, minimizing browser, or brief
+     * network interruptions. A scheduled task will clean up users who remain disconnected beyond
+     * the grace period.
      *
-     * @param userId The unique ID of the user to remove
+     * @param userId The unique ID of the user who disconnected
      */
     fun leaveRoom(userId: String) {
         // Find the user in our session tracking
         userSessions[userId]?.let { user ->
-            // Log the user leaving action
-            logger.info("👋 User '{}' left room '{}' (User ID: {})", user.name, user.roomId, userId)
+            // Mark user as disconnected with current timestamp
+            user.disconnectedAt = System.currentTimeMillis()
+
+            // Log the disconnection with grace period info
+            logger.info(
+                    "⏸️ User '{}' disconnected from room '{}' (User ID: {}) - Grace period: {} minutes",
+                    user.name,
+                    user.roomId,
+                    userId,
+                    DISCONNECT_GRACE_PERIOD_MS / 60000
+            )
+        }
+                ?: run {
+                    // User not found - this could indicate a memory leak or race condition
+                    logger.warn(
+                            "⚠️ Attempted to mark non-existent user as disconnected: {}",
+                            userId
+                    )
+                }
+    }
+
+    /**
+     * Completely removes a user from the system (called after grace period expires)
+     *
+     * This is the final cleanup that happens when a user has been disconnected for longer than the
+     * grace period. It removes them from all data structures.
+     *
+     * @param userId The unique ID of the user to remove permanently
+     */
+    private fun permanentlyRemoveUser(userId: String) {
+        userSessions[userId]?.let { user ->
+            // Log permanent removal
+            logger.info(
+                    "👋 User '{}' permanently removed from room '{}' after grace period (User ID: {})",
+                    user.name,
+                    user.roomId,
+                    userId
+            )
 
             // Remove user from their room's participant list
             rooms[user.roomId]?.users?.removeIf { it.id == userId }
@@ -288,10 +401,6 @@ class RoomService {
                 rooms.remove(user.roomId)
             }
         }
-                ?: run {
-                    // User not found - this could indicate a memory leak or race condition
-                    logger.warn("⚠️ Attempted to remove non-existent user with ID: {}", userId)
-                }
     }
 
     /**
@@ -418,9 +527,10 @@ class RoomService {
      * - User names are always visible
      * - Voting status (hasVoted) is always visible
      * - Estimates are only included when showEstimates is true
+     * - Disconnected users are filtered out (not shown to clients)
      *
-     * This separation ensures that clients only receive information they should see based on the
-     * current session state.
+     * The disconnected user filtering ensures clients only see active participants, while the
+     * backend keeps disconnected users in memory during the grace period for seamless reconnection.
      *
      * @param roomId The ID of the room to get state for
      * @return RoomStateUpdate with current room state, or null if room doesn't exist
@@ -430,14 +540,19 @@ class RoomService {
             RoomStateUpdate(
                     roomId = roomId,
                     users =
-                            room.users.map { user ->
-                                UserState(
-                                        id = user.id,
-                                        name = user.name,
-                                        hasVoted = user.hasVoted,
-                                        estimate = if (room.showEstimates) user.estimate else null
-                                )
-                            },
+                            room.users
+                                    // Filter out disconnected users from client view
+                                    .filter { user -> user.disconnectedAt == null }
+                                    .map { user ->
+                                        UserState(
+                                                id = user.id,
+                                                name = user.name,
+                                                hasVoted = user.hasVoted,
+                                                estimate =
+                                                        if (room.showEstimates) user.estimate
+                                                        else null
+                                        )
+                                    },
                     showEstimates = room.showEstimates
             )
         }

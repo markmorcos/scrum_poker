@@ -7,6 +7,10 @@ A real-time collaborative estimation tool for distributed software teams using t
 ## 🚀 Features
 
 - Real-time WebSocket communication
+- **Room-based sessions** - Create rooms with unique animal names (e.g., "happy-panda")
+- **Easy room sharing** - Share room links with your team for quick access
+- **Seamless reconnection** - 5-minute grace period keeps you in the room when switching tabs, minimizing browser, or brief network interruptions
+- **Automatic session recovery** - Your vote and room state are preserved during disconnections
 - Multiple concurrent rooms
 - Fibonacci sequence cards (0.5, 1, 2, 3, 5, 8, 13, 20, 40)
 - Show/Hide estimates functionality
@@ -215,12 +219,72 @@ npm run dev
 
 ## 📝 How to Use
 
+### Creating a New Room
+
 1. Enter your name on the welcome screen
-2. Enter a room name (e.g., "sprint-planning")
-3. Select your estimate card
-4. Wait for all team members to vote
-5. Click "Show" to reveal all estimates
-6. Click "Delete Estimates" to start a new round
+2. Click "Create New Room"
+3. A unique room name will be generated (e.g., "happy-panda")
+4. Share the room link with your team members
+
+### Joining an Existing Room
+
+1. Enter your name on the welcome screen
+2. Click "Join Existing Room"
+3. Enter the room name shared by your team (e.g., "happy-panda")
+4. Click "Join"
+
+**Or** simply click a shared room link - you'll be prompted to enter your name and join automatically!
+
+### During the Session
+
+1. Select your estimate card
+2. Wait for all team members to vote
+3. Click "Show" to reveal all estimates
+4. Click "Delete Estimates" to start a new round
+
+## 🔄 Seamless Reconnection Feature
+
+The application includes a robust reconnection system that handles temporary disconnections gracefully:
+
+### What Happens When You Switch Tabs or Minimize the Browser?
+
+**Backend (Grace Period):**
+
+- When you disconnect, you're marked as "disconnected" but **kept in the room for 5 minutes**
+- Your vote and session state are **preserved**
+- Other users don't see you in the user list (you appear offline)
+- If you reconnect within 5 minutes, you **seamlessly rejoin** with your vote intact
+
+**Frontend (Auto-Reconnect):**
+
+- **Page Visibility API** detects when you return to the tab
+- Automatic reconnection attempt when tab becomes visible
+- **Reconnecting banner** shows during reconnection
+- Room context stored in localStorage for recovery
+
+### Benefits
+
+✅ **No interruptions** when switching tabs during meetings  
+✅ **Vote preserved** during brief network issues  
+✅ **Seamless experience** - reconnection happens automatically  
+✅ **Works for:** Tab switching, browser minimize, computer sleep, mobile app switching
+
+### Technical Implementation
+
+**Backend (Kotlin/Spring Boot):**
+
+- User model includes `disconnectedAt` timestamp field
+- `leaveRoom()` marks users as disconnected instead of removing them
+- Scheduled task runs every minute to clean up users past grace period (5 min)
+- `joinRoom()` checks for disconnected users with matching name and reconnects them
+- `getRoomState()` filters out disconnected users from client view
+
+**Frontend (React/TypeScript):**
+
+- Page Visibility API listener on `visibilitychange` event
+- localStorage stores room context (`roomId`, `userName`)
+- Connection status banner with spinner during reconnection
+- Auto-retry logic triggered when tab becomes visible
 
 ## 🔍 Troubleshooting
 

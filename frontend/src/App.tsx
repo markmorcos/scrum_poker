@@ -22,15 +22,46 @@
  * the poker room without first providing their name.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Navigate,
   Route,
   BrowserRouter as Router,
   Routes,
+  useParams,
 } from "react-router-dom";
 import { NameEntry } from "./pages/NameEntry";
 import { PokerRoom } from "./pages/PokerRoom";
+
+/**
+ * Protected Room Route Component
+ *
+ * Handles the logic for accessing a room:
+ * - If user has a name, shows the room
+ * - If no name, redirects to home with the room ID in state
+ */
+interface ProtectedRoomRouteProps {
+  userName: string;
+  userId: string;
+  setUserId: (id: string) => void;
+}
+
+function ProtectedRoomRoute({
+  userName,
+  userId,
+  setUserId,
+}: ProtectedRoomRouteProps) {
+  const { roomId } = useParams<{ roomId: string }>();
+
+  if (userName) {
+    return (
+      <PokerRoom userName={userName} userId={userId} setUserId={setUserId} />
+    );
+  }
+
+  // Redirect to home with room ID in state so user can join after entering name
+  return <Navigate to="/" state={{ roomId }} replace />;
+}
 
 /**
  * Main Application Component
@@ -38,17 +69,33 @@ import { PokerRoom } from "./pages/PokerRoom";
  * Manages global state and routing for the entire Scrum Poker application.
  * Uses React hooks for state management and React Router for navigation.
  *
+ * State Persistence:
+ * - User name is persisted in localStorage to maintain identity across tabs
+ * - Allows seamless navigation between tabs without re-entering name
+ *
  * @returns {JSX.Element} The complete application with routing and layout
  */
 function App() {
   // Global state for user information
-  const [userName, setUserName] = useState<string>(""); // User's display name entered on the welcome screen
+  // Initialize from localStorage if available
+  const [userName, setUserName] = useState<string>(() => {
+    return localStorage.getItem("scrumPokerUserName") || "";
+  });
   const [userId, setUserId] = useState<string>(""); // Unique ID assigned by backend when joining a room
+
+  // Persist userName to localStorage whenever it changes
+  useEffect(() => {
+    if (userName) {
+      localStorage.setItem("scrumPokerUserName", userName);
+    } else {
+      localStorage.removeItem("scrumPokerUserName");
+    }
+  }, [userName]);
 
   return (
     <Router>
       {/* Main application container with full height and consistent background */}
-      <div className="min-h-[100dvh] min-h-screen bg-gray-50 dark:bg-dark-bg transition-colors duration-200">
+      <div className="min-h-screen bg-gray-50 dark:bg-dark-bg transition-colors duration-200">
         <Routes>
           {/* Home Route - Name Entry Page */}
           <Route
@@ -61,17 +108,11 @@ function App() {
           <Route
             path="/room/:roomId"
             element={
-              userName ? (
-                // User has provided name - show poker room
-                <PokerRoom
-                  userName={userName}
-                  userId={userId}
-                  setUserId={setUserId}
-                />
-              ) : (
-                // User hasn't provided name - redirect to home
-                <Navigate to="/" replace />
-              )
+              <ProtectedRoomRoute
+                userName={userName}
+                userId={userId}
+                setUserId={setUserId}
+              />
             }
           />
         </Routes>
