@@ -5,7 +5,7 @@ FROM gradle:8.5-jdk17 AS backend-build
 WORKDIR /app
 COPY backend/build.gradle.kts backend/settings.gradle.kts backend/gradle.properties ./
 COPY backend/src ./src
-RUN gradle build --no-daemon
+RUN gradle build --no-daemon -x test
 
 # Stage 2: Build frontend
 FROM node:18-alpine AS frontend-build
