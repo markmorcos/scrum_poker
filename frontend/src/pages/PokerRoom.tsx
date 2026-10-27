@@ -12,6 +12,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ConnectionStatus } from "../components/ConnectionStatus";
+import { PlayerGrid } from "../components/PlayerGrid";
 import { PokerCard } from "../components/PokerCard";
 import { isConsensus, useConsensusConfetti } from "../hooks/useConsensusConfetti";
 import { useRoomConnection } from "../hooks/useRoomConnection";
@@ -184,7 +185,7 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
 
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-gray-200 dark:border-dark-border bg-white/90 dark:bg-dark-bg/90 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-md items-center justify-between gap-3">
+        <div className="mx-auto flex max-w-md lg:max-w-6xl items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate font-mono text-xs text-gray-500 dark:text-dark-text-secondary">{roomId}</p>
             <p className="truncate font-semibold text-gray-900 dark:text-dark-text">
@@ -209,51 +210,75 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
         </div>
       </header>
 
-      <main className="mx-auto max-w-md space-y-5 px-4 pt-5">
-        {roomState.showEstimates ? (
-          <section className="rounded-xl bg-white dark:bg-dark-surface p-4 shadow">
-            {isConsensus(roomState) && (
-              <p className="mb-3 text-center text-lg font-semibold text-green-700 dark:text-green-300">
-                🎉 Everyone agrees!
-              </p>
-            )}
-            <ul className="divide-y divide-gray-100 dark:divide-dark-border">
-              {roomState.users.map((user) => (
-                <li key={user.id} className="flex items-center justify-between py-2">
-                  <span className={`truncate ${user.id === userId ? "font-semibold" : ""} text-gray-900 dark:text-dark-text`}>
-                    {user.name}
-                    {user.id === userId && <span className="ml-1 text-xs text-blue-600 dark:text-blue-400">(you)</span>}
-                  </span>
-                  <span className="ml-3 min-w-[2.5rem] rounded-md bg-blue-600 dark:bg-blue-300 px-2 py-1 text-center font-bold text-white dark:text-gray-900">
-                    {user.estimate ?? "–"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : (
-          <p className="text-center text-gray-600 dark:text-dark-text-secondary">
-            {selectedCard ? (
-              <>
-                Your vote: <span className="font-bold text-gray-900 dark:text-dark-text">{selectedCard}</span>
-                <span className="block text-xs">Tap another card to change it</span>
-              </>
-            ) : (
-              "Pick your estimate"
-            )}
-          </p>
-        )}
+      <main className="mx-auto max-w-md lg:max-w-6xl px-4 pt-5 lg:grid lg:grid-cols-[minmax(0,28rem)_1fr] lg:items-start lg:gap-10">
+        <div className="space-y-5">
+          {roomState.showEstimates ? (
+            <section className="rounded-xl bg-white dark:bg-dark-surface p-4 shadow lg:hidden">
+              {isConsensus(roomState) && (
+                <p className="mb-3 text-center text-lg font-semibold text-green-700 dark:text-green-300">
+                  🎉 Everyone agrees!
+                </p>
+              )}
+              <ul className="divide-y divide-gray-100 dark:divide-dark-border">
+                {roomState.users.map((user) => (
+                  <li key={user.id} className="flex items-center justify-between py-2">
+                    <span className={`truncate ${user.id === userId ? "font-semibold" : ""} text-gray-900 dark:text-dark-text`}>
+                      {user.name}
+                      {user.id === userId && <span className="ml-1 text-xs text-blue-600 dark:text-blue-400">(you)</span>}
+                    </span>
+                    <span className="ml-3 min-w-[2.5rem] rounded-md bg-blue-600 dark:bg-blue-300 px-2 py-1 text-center font-bold text-white dark:text-gray-900">
+                      {user.estimate ?? "–"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : (
+            <p className="text-center text-gray-600 dark:text-dark-text-secondary">
+              {selectedCard ? (
+                <>
+                  Your vote: <span className="font-bold text-gray-900 dark:text-dark-text">{selectedCard}</span>
+                  <span className="block text-xs">Tap another card to change it</span>
+                </>
+              ) : (
+                "Pick your estimate"
+              )}
+            </p>
+          )}
 
-        <div className="grid grid-cols-3 gap-3">
-          {allCards.map((value) => (
-            <PokerCard
-              key={value}
-              value={value}
-              isSelected={selectedCard === value}
-              onClick={() => handleCardSelect(value)}
-            />
-          ))}
+          <div className="grid grid-cols-3 gap-3">
+            {allCards.map((value) => (
+              <PokerCard
+                key={value}
+                value={value}
+                isSelected={selectedCard === value}
+                onClick={() => handleCardSelect(value)}
+              />
+            ))}
+          </div>
         </div>
+
+        {/* Laptop: live player panel next to the cards, like a mini board */}
+        <aside data-testid="player-panel" className="hidden lg:block lg:sticky lg:top-24 space-y-4">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text">
+              {roomState.showEstimates ? "Results" : "Players"}
+            </h2>
+            <span className="text-sm text-gray-500 dark:text-dark-text-secondary">
+              {votedCount} / {roomState.users.length} voted
+            </span>
+          </div>
+          {roomState.showEstimates && isConsensus(roomState) && (
+            <div className="rounded-xl bg-green-100 dark:bg-green-900/30 p-3 text-center text-lg font-semibold text-green-800 dark:text-green-300">
+              🎉 Everyone agrees on {roomState.users.find((u) => u.hasVoted)?.estimate}
+            </div>
+          )}
+          <PlayerGrid
+            users={roomState.users}
+            showEstimates={roomState.showEstimates}
+            highlightUserId={userId}
+          />
+        </aside>
       </main>
 
       {errorMessage && (
@@ -272,7 +297,7 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
           className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface px-4 pt-3"
           style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
         >
-          <div className="mx-auto flex max-w-md gap-3">
+          <div className="mx-auto flex max-w-md lg:max-w-6xl gap-3">
             <button
               onClick={() => hostAction(MessageType.DELETE_ESTIMATES)}
               className="flex-1 rounded-xl border border-gray-300 dark:border-dark-border py-3 font-semibold text-gray-700 dark:text-dark-text"

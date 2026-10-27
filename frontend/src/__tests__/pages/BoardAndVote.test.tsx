@@ -181,6 +181,18 @@ describe("Vote screen", () => {
     expect(screen.getByText("🎉 Everyone agrees!")).toBeInTheDocument();
   });
 
+  it("renders the laptop player panel with every participant and marks you", async () => {
+    renderAt("/room/happy-panda");
+    await waitFor(() => expect(fake.sent.length).toBeGreaterThan(0));
+    act(() => fake.emit(MessageType.ROOM_UPDATE, roomState()));
+
+    const panel = await screen.findByTestId("player-panel");
+    expect(panel).toHaveTextContent("1 / 2 voted");
+    expect(screen.getAllByTestId("player-tile")).toHaveLength(2);
+    expect(screen.getAllByTestId("player-tile")[0]).toHaveTextContent("Alice(you)");
+    expect(screen.getAllByTestId("player-tile")[1]).not.toHaveTextContent("(you)");
+  });
+
   it("shows server errors such as rejected facilitator actions", async () => {
     renderAt("/room/happy-panda");
     await waitFor(() => expect(fake.sent.length).toBeGreaterThan(0));

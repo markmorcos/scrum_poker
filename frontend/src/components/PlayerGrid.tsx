@@ -4,6 +4,8 @@ import { User } from "../types";
 interface PlayerGridProps {
   users: User[];
   showEstimates: boolean;
+  /** Marks this participant's tile (used when a voter sees the grid on a laptop) */
+  highlightUserId?: string;
 }
 
 /**
@@ -11,7 +13,7 @@ interface PlayerGridProps {
  * whether they voted and, once revealed, their estimate. Sized to read
  * from across a meeting room.
  */
-export const PlayerGrid: React.FC<PlayerGridProps> = ({ users, showEstimates }) => {
+export const PlayerGrid: React.FC<PlayerGridProps> = ({ users, showEstimates, highlightUserId }) => {
   if (users.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center text-gray-500 dark:text-dark-text-secondary">
@@ -25,11 +27,14 @@ export const PlayerGrid: React.FC<PlayerGridProps> = ({ users, showEstimates }) 
     <ul className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
       {users.map((user) => {
         const revealed = showEstimates && user.estimate;
+        const isHighlighted = user.id === highlightUserId;
         return (
           <li
             key={user.id}
             data-testid="player-tile"
-            className="flex flex-col items-center gap-3 rounded-xl bg-white dark:bg-dark-surface p-4 shadow transition-colors duration-200"
+            className={`flex flex-col items-center gap-3 rounded-xl bg-white dark:bg-dark-surface p-4 shadow transition-colors duration-200 ${
+              isHighlighted ? "ring-2 ring-blue-500" : ""
+            }`}
           >
             <div
               className={`flex items-center justify-center w-20 h-28 rounded-lg text-3xl font-bold transition-all duration-300 ${
@@ -61,6 +66,9 @@ export const PlayerGrid: React.FC<PlayerGridProps> = ({ users, showEstimates }) 
             <span className="max-w-full truncate text-lg font-medium text-gray-900 dark:text-dark-text">
               {user.name}
             </span>
+            {isHighlighted && (
+              <span className="-mt-2 text-sm text-blue-600 dark:text-blue-400">(you)</span>
+            )}
           </li>
         );
       })}
