@@ -29,6 +29,9 @@
 package com.scrumpoker.service
 
 import com.scrumpoker.model.*
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
@@ -80,6 +83,15 @@ class RoomService {
      * accessing user information efficiently.
      */
     private val userSessions = ConcurrentHashMap<String, User>()
+
+    /**
+     * Number of boards (shared screens) currently watching each room
+     *
+     * A room with an open board is kept alive even before anyone has joined to vote.
+     */
+    private val roomWatchers = ConcurrentHashMap<String, Int>()
+
+    private val secureRandom = SecureRandom()
 
     // Memory management constants
     private val MAX_ROOMS = 1000 // Maximum number of concurrent rooms
@@ -146,7 +158,10 @@ class RoomService {
         var cleanedUsers = 0
 
         // Find rooms with no users (potential orphaned rooms)
-        val emptyRoomIds = rooms.values.filter { it.users.isEmpty() }.map { it.id }
+        val emptyRoomIds =
+                rooms.values
+                        .filter { it.users.isEmpty() && !roomWatchers.containsKey(it.id) }
+                        .map { it.id }
         emptyRoomIds.forEach { roomId ->
             rooms.remove(roomId)
             cleanedRooms++
@@ -396,7 +411,9 @@ class RoomService {
             userSessions.remove(userId)
 
             // Clean up empty rooms to prevent memory leaks
-            if (rooms[user.roomId]?.users?.isEmpty() == true) {
+            if (rooms[user.roomId]?.users?.isEmpty() == true &&
+                            !roomWatchers.containsKey(user.roomId)
+            ) {
                 logger.info("🧹 Cleaning up empty room '{}'", user.roomId)
                 rooms.remove(user.roomId)
             }
@@ -514,6 +531,76 @@ class RoomService {
                 logger.info("🗑️ Delete Estimations triggered in room '{}'", roomId)
             }
         }
+    }
+
+    /**
+     * Registers a board (shared screen) as watching a room
+     *
+     * Creates the room if needed. The first board to open a room becomes the facilitator and is
+     * issued a host token. A board that brings a token for a room that no longer exists (e.g. the
+     * server cleaned it up while the screen was reloading) gets that token adopted, so its stored
+     * facilitator link keeps working.
+     *
+     * @param roomId The ID of the room to watch
+     * @param hostToken Host token the board stored from a previous visit, if any
+     * @return Whether the board is the facilitator, and the token if it is
+     * @throws IllegalStateException if the room limit is reached
+     */
+    fun watchRoom(roomId: String, hostToken: String? = null): WatchResult {
+        if (!rooms.containsKey(roomId) && rooms.size >= MAX_ROOMS) {
+            throw IllegalStateException("Room capacity limit ($MAX_ROOMS) reached")
+        }
+        val room = rooms.computeIfAbsent(roomId) { Room(it) }
+        roomWatchers.merge(roomId, 1, Int::plus)
+
+        val result =
+                synchronized(room) {
+                    if (room.hostToken == null) {
+                        room.hostToken = hostToken?.takeIf { it.isNotBlank() } ?: generateHostToken()
+                        logger.info("🖥️ Board opened room '{}' as facilitator", roomId)
+                        WatchResult(isHost = true, hostToken = room.hostToken)
+                    } else if (tokensMatch(room.hostToken, hostToken)) {
+                        WatchResult(isHost = true, hostToken = room.hostToken)
+                    } else {
+                        logger.info("🖥️ Board opened room '{}' read-only", roomId)
+                        WatchResult(isHost = false, hostToken = null)
+                    }
+                }
+        return result
+    }
+
+    /**
+     * Unregisters a board from a room, removing the room if nobody is left in it
+     *
+     * @param roomId The ID of the room the board was watching
+     */
+    fun unwatchRoom(roomId: String) {
+        val remaining = roomWatchers.computeIfPresent(roomId) { _, count -> (count - 1).takeIf { it > 0 } }
+        if (remaining == null && rooms[roomId]?.users?.isEmpty() == true) {
+            logger.info("🧹 Cleaning up empty room '{}' after last board closed", roomId)
+            rooms.remove(roomId)
+        }
+    }
+
+    /**
+     * Checks whether a token grants facilitator rights in a room
+     *
+     * @param roomId The ID of the room
+     * @param hostToken Token supplied by the client
+     * @return true if the token matches the room's host token
+     */
+    fun isHost(roomId: String, hostToken: String?): Boolean =
+            tokensMatch(rooms[roomId]?.hostToken, hostToken)
+
+    private fun tokensMatch(expected: String?, actual: String?): Boolean {
+        if (expected == null || actual == null) return false
+        return MessageDigest.isEqual(expected.toByteArray(), actual.toByteArray())
+    }
+
+    private fun generateHostToken(): String {
+        val bytes = ByteArray(18)
+        secureRandom.nextBytes(bytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 
     /**

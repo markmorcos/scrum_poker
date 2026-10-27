@@ -86,7 +86,10 @@ data class Room(
         val users: MutableList<User> = mutableListOf(),
 
         /** Whether estimates are currently visible to all participants */
-        var showEstimates: Boolean = false
+        var showEstimates: Boolean = false,
+
+        /** Secret that identifies the facilitator (board or phone), never sent in room state */
+        var hostToken: String? = null
 )
 
 /**
@@ -107,8 +110,36 @@ data class JoinRoomRequest(
         val roomId: String,
 
         /** Optional existing user ID for reconnecting from another tab */
-        val userId: String? = null
+        val userId: String? = null,
+
+        /** Optional facilitator token (from the ?host= link) granting reveal/reset rights */
+        val hostToken: String? = null
 )
+
+/**
+ * WatchRequest Data Class - Request from a board (shared screen) to follow a room
+ *
+ * A watching session receives room updates but is not a participant. The first board to watch a
+ * room becomes its facilitator and receives the room's host token.
+ *
+ * @property roomId The ID of the room to watch
+ * @property hostToken Optional host token previously issued for this room
+ */
+data class WatchRequest(
+        /** ID of the room to watch */
+        val roomId: String,
+
+        /** Host token previously issued for this room, if any */
+        val hostToken: String? = null
+)
+
+/**
+ * WatchResult Data Class - Outcome of a board subscribing to a room
+ *
+ * @property isHost Whether the watcher holds facilitator rights
+ * @property hostToken The room's host token, only set when isHost is true
+ */
+data class WatchResult(val isHost: Boolean, val hostToken: String?)
 
 /**
  * VoteRequest Data Class - Request to submit an estimate
@@ -207,6 +238,9 @@ data class UserState(
 enum class MessageType {
         /** Client request to join a poker room */
         JOIN,
+
+        /** Board (shared screen) subscribes to room updates without becoming a voter */
+        WATCH,
 
         /** Client submits their story point estimate */
         VOTE,
