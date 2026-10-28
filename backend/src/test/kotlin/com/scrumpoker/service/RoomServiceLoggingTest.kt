@@ -40,6 +40,13 @@ class RoomServiceLoggingTest {
         logger.level = Level.INFO
     }
 
+    /** Moves the service clock past the reconnect grace period and runs the scheduled cleanup */
+    private fun expireGracePeriod() {
+        val afterGracePeriod = System.currentTimeMillis() + 5 * 60 * 1000L + 1
+        roomService.clock = { afterGracePeriod }
+        roomService.cleanupDisconnectedUsers()
+    }
+
     @AfterEach
     fun tearDown() {
         logger.detachAppender(listAppender)
@@ -169,14 +176,14 @@ class RoomServiceLoggingTest {
         // When - Only one user leaves
         roomService.leaveRoom(user1.id)
 
-        // Then - Should only log the user leaving (no room cleanup)
+        // Then - Should only log the disconnect (grace period starts, no cleanup)
         val logEvents = listAppender.list
         Assertions.assertEquals(1, logEvents.size)
 
         val logEvent = logEvents[0]
         Assertions.assertEquals(Level.INFO, logEvent.level)
         Assertions.assertTrue(
-                logEvent.formattedMessage.contains("👋 User 'Frank' left room 'test-room'")
+                logEvent.formattedMessage.contains("⏸️ User 'Frank' disconnected from room 'test-room'")
         )
         Assertions.assertTrue(logEvent.formattedMessage.contains("User ID: ${user1.id}"))
     }
@@ -188,22 +195,17 @@ class RoomServiceLoggingTest {
         val user = roomService.joinRoom("Grace", "test-room")
         listAppender.list.clear() // Clear join log
 
-        // When
+        // When - user leaves and the reconnect grace period runs out
         roomService.leaveRoom(user.id)
+        expireGracePeriod()
 
-        // Then
-        val logEvents = listAppender.list
-        Assertions.assertEquals(2, logEvents.size)
-
-        // First log: user leaving
-        val leaveLog = logEvents[0]
-        Assertions.assertTrue(leaveLog.formattedMessage.contains("👋 User 'Grace' left room"))
-
-        // Second log: room cleanup
-        val cleanupLog = logEvents[1]
+        // Then - disconnect, permanent removal, then room cleanup
+        val logMessages = listAppender.list.map { it.formattedMessage }
+        Assertions.assertTrue(logMessages[0].contains("⏸️ User 'Grace' disconnected from room"))
         Assertions.assertTrue(
-                cleanupLog.formattedMessage.contains("🧹 Cleaning up empty room 'test-room'")
+                logMessages[1].contains("👋 User 'Grace' permanently removed from room 'test-room'")
         )
+        Assertions.assertTrue(logMessages[2].contains("🧹 Cleaning up empty room 'test-room'"))
     }
 
     /** Test comprehensive user journey with multiple actions */
@@ -229,6 +231,7 @@ class RoomServiceLoggingTest {
         // User leaves
         roomService.leaveRoom(user2.id)
         roomService.leaveRoom(user1.id)
+        expireGracePeriod()
 
         // Then
         val logEvents = listAppender.list
@@ -247,7 +250,10 @@ class RoomServiceLoggingTest {
                 logMessages.any { it.contains("🗑️ User") && it.contains("pressed Delete") }
         )
         Assertions.assertTrue(
-                logMessages.any { it.contains("👋 User") && it.contains("left room") }
+                logMessages.any { it.contains("⏸️ User") && it.contains("disconnected from room") }
+        )
+        Assertions.assertTrue(
+                logMessages.any { it.contains("👋 User") && it.contains("permanently removed") }
         )
         Assertions.assertTrue(logMessages.any { it.contains("🧹 Cleaning up empty room") })
     }

@@ -26,15 +26,12 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         
-    - name: 🐘 Setup Gradle
-      uses: gradle/gradle-build-action@v2
-      with:
-        gradle-version: wrapper
-        
     - name: 🔍 Validate Gradle wrapper
-      working-directory: ./backend
-      run: gradle wrapper --gradle-version=8.5
-      
+      uses: gradle/actions/wrapper-validation@v4
+
+    - name: 🐘 Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+
     - name: 🧪 Run backend tests
       working-directory: ./backend
       run: ./gradlew test --console=plain

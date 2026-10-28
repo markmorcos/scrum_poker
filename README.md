@@ -7,13 +7,16 @@ A real-time collaborative estimation tool for distributed software teams using t
 ## 🚀 Features
 
 - Real-time WebSocket communication
-- **Room-based sessions** - Create rooms with unique animal names (e.g., "happy-panda")
-- **Easy room sharing** - Share room links with your team for quick access
+- **Shared-screen board** - "Start session on this screen" opens a board for the TV/projector with a QR code, live voting progress and the revealed cards
+- **Vote from your phone** - Everyone scans the QR code and votes from a mobile-first card screen; your name is remembered for next time
+- **Facilitator controls** - Only the board and the facilitator's phone (opened through the board's "Facilitate from your phone" QR code) can reveal cards or start a new round. The facilitator token lives in server memory, no database needed
+- **Room-based sessions** - Rooms get unique animal names (e.g., "happy-panda"); you can also join by typing the room name
 - **Seamless reconnection** - 5-minute grace period keeps you in the room when switching tabs, minimizing browser, or brief network interruptions
 - **Automatic session recovery** - Your vote and room state are preserved during disconnections
+- **Phone niceties** - Haptic tap on vote, screen stays awake during the session, installable to the home screen
 - Multiple concurrent rooms
-- Fibonacci sequence cards (0.5, 1, 2, 3, 5, 8, 13, 20, 40)
-- Show/Hide estimates functionality
+- Fibonacci sequence cards (0, 0.5, 1, 2, 3, 5, 8, 13, 20) plus ?, ☕ and 🍌
+- Confetti when everyone agrees
 - Clean, modern UI with Tailwind CSS
 - **Dark mode support** - automatically responds to system/browser preferences
 - **Comprehensive user action logging** - complete audit trail of all user interactions

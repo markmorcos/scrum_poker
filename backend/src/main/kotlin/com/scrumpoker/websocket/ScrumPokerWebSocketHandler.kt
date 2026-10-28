@@ -91,6 +91,12 @@ class ScrumPokerWebSocketHandler(
      */
     private val sessionToUser = ConcurrentHashMap<String, String>()
 
+    /** Board (shared screen) sessions per room; they receive updates but are not voters */
+    private val viewerSessions = ConcurrentHashMap<String, MutableSet<WebSocketSession>>()
+
+    /** Maps board session ID to the room it watches, for cleanup on disconnect */
+    private val viewerToRoom = ConcurrentHashMap<String, String>()
+
     // Memory management constants for WebSocket sessions
     private val MAX_CONCURRENT_SESSIONS = 10000 // Maximum concurrent WebSocket sessions
 
@@ -151,6 +157,7 @@ class ScrumPokerWebSocketHandler(
             // Route message to appropriate handler based on type
             when (webSocketMessage.type) {
                 MessageType.JOIN -> handleJoin(session, webSocketMessage.payload)
+                MessageType.WATCH -> handleWatch(session, webSocketMessage.payload)
                 MessageType.VOTE -> handleVote(session, webSocketMessage.payload)
                 MessageType.SHOW_ESTIMATES -> handleShowEstimates(session, webSocketMessage.payload)
                 MessageType.HIDE_ESTIMATES -> handleHideEstimates(session, webSocketMessage.payload)
@@ -214,7 +221,18 @@ class ScrumPokerWebSocketHandler(
             // Send user ID back to the client for future message identification
             sendMessage(
                     session,
-                    WebSocketMessage(type = MessageType.JOIN, payload = mapOf("userId" to user.id))
+                    WebSocketMessage(
+                            type = MessageType.JOIN,
+                            payload =
+                                    mapOf(
+                                            "userId" to user.id,
+                                            "isHost" to
+                                                    roomService.isHost(
+                                                            joinRequest.roomId,
+                                                            joinRequest.hostToken
+                                                    )
+                                    )
+                    )
             )
 
             // Broadcast room state to all users in the room
@@ -256,6 +274,76 @@ class ScrumPokerWebSocketHandler(
      * @param session WebSocket session of the voting user
      * @param payload Vote request data containing user ID, room ID, and estimate
      */
+    /**
+     * Handles a board (shared screen) subscribing to a room
+     *
+     * The board receives room updates like a participant but does not appear in the room. The
+     * reply tells it whether it is the facilitator and, if so, the host token to keep.
+     */
+    private fun handleWatch(session: WebSocketSession, payload: Any) {
+        if (sessions.size + viewerToRoom.size >= MAX_CONCURRENT_SESSIONS) {
+            logger.error("❌ Cannot accept board: maximum session limit {} reached", MAX_CONCURRENT_SESSIONS)
+            session.close()
+            return
+        }
+
+        val watchRequest = objectMapper.convertValue(payload, WatchRequest::class.java)
+
+        try {
+            val result = roomService.watchRoom(watchRequest.roomId, watchRequest.hostToken)
+
+            // A session watches one room; switching rooms releases the previous one
+            viewerToRoom.put(session.id, watchRequest.roomId)?.let { previousRoomId ->
+                viewerSessions[previousRoomId]?.remove(session)
+                roomService.unwatchRoom(previousRoomId)
+            }
+            viewerSessions.computeIfAbsent(watchRequest.roomId) { ConcurrentHashMap.newKeySet() }
+                    .add(session)
+
+            sendMessage(
+                    session,
+                    WebSocketMessage(
+                            type = MessageType.WATCH,
+                            payload = mapOf("isHost" to result.isHost, "hostToken" to result.hostToken)
+                    )
+            )
+            broadcastRoomState(watchRequest.roomId)
+        } catch (e: IllegalStateException) {
+            logger.warn("❌ Cannot watch room: {}", e.message)
+            sendMessage(
+                    session,
+                    WebSocketMessage(
+                            type = MessageType.ERROR,
+                            payload =
+                                    mapOf(
+                                            "error" to
+                                                    "Server capacity limit reached. Please try again later."
+                                    )
+                    )
+            )
+            session.close()
+        }
+    }
+
+    /**
+     * Rejects facilitator actions (reveal/hide/reset) that don't carry the room's host token
+     *
+     * @return true if the action may proceed
+     */
+    private fun requireHost(session: WebSocketSession, roomId: String, payload: Map<*, *>): Boolean {
+        if (roomService.isHost(roomId, payload["hostToken"] as? String)) return true
+
+        logger.warn("🚫 Rejected facilitator action in room '{}' from session {}", roomId, session.id)
+        sendMessage(
+                session,
+                WebSocketMessage(
+                        type = MessageType.ERROR,
+                        payload = mapOf("error" to "Only the facilitator can do that")
+                )
+        )
+        return false
+    }
+
     private fun handleVote(session: WebSocketSession, payload: Any) {
         // Convert payload to typed request object
         val voteRequest = objectMapper.convertValue(payload, VoteRequest::class.java)
@@ -285,6 +373,7 @@ class ScrumPokerWebSocketHandler(
     private fun handleShowEstimates(session: WebSocketSession, payload: Any) {
         // Extract room ID from generic payload
         val roomId = (payload as Map<*, *>)["roomId"] as String
+        if (!requireHost(session, roomId, payload)) return
 
         // Get the user ID from the session for logging purposes
         val userId = sessionToUser[session.id]
@@ -313,6 +402,7 @@ class ScrumPokerWebSocketHandler(
     private fun handleHideEstimates(session: WebSocketSession, payload: Any) {
         // Extract room ID from generic payload
         val roomId = (payload as Map<*, *>)["roomId"] as String
+        if (!requireHost(session, roomId, payload)) return
 
         // Update room state to hide estimates
         roomService.hideEstimates(roomId)
@@ -339,6 +429,7 @@ class ScrumPokerWebSocketHandler(
     private fun handleDeleteEstimates(session: WebSocketSession, payload: Any) {
         // Extract room ID from generic payload
         val roomId = (payload as Map<*, *>)["roomId"] as String
+        if (!requireHost(session, roomId, payload)) return
 
         // Get the user ID from the session for logging purposes
         val userId = sessionToUser[session.id]
@@ -374,6 +465,9 @@ class ScrumPokerWebSocketHandler(
         roomService.getUsersByRoom(roomId).forEach { user ->
             sessions[user.id]?.let { session -> sendMessage(session, message) }
         }
+
+        // And to every board showing the room
+        viewerSessions[roomId]?.forEach { session -> sendMessage(session, message) }
     }
 
     /**
@@ -416,7 +510,7 @@ class ScrumPokerWebSocketHandler(
     fun pingAllSessions() {
         val pingMessage = WebSocketMessage(type = MessageType.PING, payload = emptyMap<String, Any>())
         var sent = 0
-        sessions.values.forEach { session ->
+        (sessions.values + viewerSessions.values.flatten()).forEach { session ->
             if (session.isOpen) {
                 try {
                     session.sendMessage(TextMessage(objectMapper.writeValueAsString(pingMessage)))
@@ -477,6 +571,17 @@ class ScrumPokerWebSocketHandler(
                 status.code,
                 status.reason ?: "No reason provided"
         )
+
+        // Boards are not users: drop the viewer registration and stop here
+        viewerToRoom.remove(session.id)?.let { watchedRoomId ->
+            viewerSessions.computeIfPresent(watchedRoomId) { _, viewers ->
+                viewers.remove(session)
+                viewers.takeIf { it.isNotEmpty() }
+            }
+            roomService.unwatchRoom(watchedRoomId)
+            super.afterConnectionClosed(session, status)
+            return
+        }
 
         // Find the user associated with this session
         val userId = sessionToUser[session.id]

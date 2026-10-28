@@ -147,3 +147,47 @@ describe('WebSocketService', () => {
     });
   });
 }); 
+describe('WebSocketService lifecycle', () => {
+  it('does not auto-reconnect after an intentional disconnect', async () => {
+    const sockets: any[] = [];
+    const ctor = vi.fn().mockImplementation(() => {
+      const socket: any = { readyState: 1, send: vi.fn() };
+      socket.close = vi.fn(() => socket.onclose?.({ code: 1000, reason: '', wasClean: true }));
+      sockets.push(socket);
+      return socket;
+    });
+    const original = global.WebSocket;
+    global.WebSocket = ctor as any;
+    vi.useFakeTimers();
+    try {
+      const service = new WebSocketService();
+      const opened = vi.fn();
+      service.onOpen(opened);
+
+      const connecting = service.connect('ws://test');
+      sockets[0].onopen();
+      await connecting;
+      expect(opened).toHaveBeenCalledTimes(1);
+
+      service.disconnect();
+      vi.advanceTimersByTime(10000);
+
+      expect(ctor).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      global.WebSocket = original;
+    }
+  });
+
+  it('sends facilitator actions with the host token', () => {
+    const service = new WebSocketService();
+    const send = vi.spyOn(service, 'send').mockImplementation(() => {});
+
+    service.sendHostAction(MessageType.SHOW_ESTIMATES, 'happy-panda', 'secret');
+
+    expect(send).toHaveBeenCalledWith({
+      type: MessageType.SHOW_ESTIMATES,
+      payload: { roomId: 'happy-panda', hostToken: 'secret' },
+    });
+  });
+});

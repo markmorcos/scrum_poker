@@ -129,55 +129,86 @@ class RoomServiceTest {
     @DisplayName("User Leaving Tests")
     inner class UserLeavingTests {
         
+        /** Moves the service clock past the reconnect grace period and runs the scheduled cleanup */
+        private fun expireGracePeriod() {
+            val afterGracePeriod = System.currentTimeMillis() + 5 * 60 * 1000L + 1
+            roomService.clock = { afterGracePeriod }
+            roomService.cleanupDisconnectedUsers()
+        }
+
         @Test
-        @DisplayName("Should remove user from room when leaving")
-        fun `leaveRoom should remove user from room`() {
+        @DisplayName("Should hide user right away and remove them after the grace period")
+        fun `leaveRoom should remove user from room after grace period`() {
             // Given
             val roomId = "test-room"
             val user = roomService.joinRoom("Alice", roomId)
-            
+
             // When
             roomService.leaveRoom(user.id)
-            val rooms = roomService.getAllRooms()
-            
-            // Then
-            assertTrue(rooms.isEmpty() || rooms[roomId]?.users?.isEmpty() == true, 
-                "User should be removed from room")
+
+            // Then - hidden from clients but kept for reconnection
+            assertNotNull(roomService.getUserById(user.id)?.disconnectedAt, "User should be marked disconnected")
+            assertTrue(roomService.getRoomState(roomId)!!.users.isEmpty(), "Disconnected user should be hidden")
+
+            // And after the grace period the user is gone
+            expireGracePeriod()
+            assertNull(roomService.getUserById(user.id), "User should be removed after grace period")
         }
-        
+
         @Test
-        @DisplayName("Should clean up empty room when last user leaves")
-        fun `leaveRoom should remove empty room`() {
+        @DisplayName("Should clean up empty room once the last user's grace period expires")
+        fun `leaveRoom should remove empty room after grace period`() {
             // Given
             val roomId = "test-room"
             val user = roomService.joinRoom("Alice", roomId)
-            
+
             // When
             roomService.leaveRoom(user.id)
-            val rooms = roomService.getAllRooms()
-            
-            // Then
-            assertFalse(rooms.containsKey(roomId), "Empty room should be cleaned up")
+
+            // Then - room survives the grace period, then is cleaned up
+            assertTrue(roomService.getAllRooms().containsKey(roomId), "Room should survive the grace period")
+            expireGracePeriod()
+            assertFalse(roomService.getAllRooms().containsKey(roomId), "Empty room should be cleaned up")
         }
-        
+
         @Test
         @DisplayName("Should keep room when other users remain")
         fun `leaveRoom should not remove room with remaining users`() {
             // Given
             val roomId = "test-room"
             val user1 = roomService.joinRoom("Alice", roomId)
-            val user2 = roomService.joinRoom("Bob", roomId)
-            
+            roomService.joinRoom("Bob", roomId)
+
             // When
             roomService.leaveRoom(user1.id)
+            expireGracePeriod()
             val rooms = roomService.getAllRooms()
-            
+
             // Then
             assertTrue(rooms.containsKey(roomId), "Room should exist with remaining users")
             assertEquals(1, rooms[roomId]?.users?.size, "Room should have one remaining user")
             assertEquals("Bob", rooms[roomId]?.users?.first()?.name, "Bob should remain in room")
         }
-        
+
+        @Test
+        @DisplayName("Should restore user and vote when rejoining within the grace period")
+        fun `rejoining within grace period keeps vote`() {
+            // Given
+            val roomId = "test-room"
+            val user = roomService.joinRoom("Alice", roomId)
+            roomService.vote(user.id, "8")
+            roomService.leaveRoom(user.id)
+
+            // When
+            val rejoined = roomService.joinRoom("Alice", roomId, user.id)
+
+            // Then
+            assertEquals(user.id, rejoined.id)
+            assertNull(rejoined.disconnectedAt)
+            val state = roomService.getRoomState(roomId)!!.users.single()
+            assertTrue(state.hasVoted, "Vote should be preserved")
+        }
+
         @Test
         @DisplayName("Should handle leaving non-existent user gracefully")
         fun `leaveRoom should handle non-existent user ID gracefully`() {

@@ -60,6 +60,9 @@ export class WebSocketService {
   /** Interval ID for keepalive pings */
   private pingInterval: ReturnType<typeof setInterval> | null = null;
 
+  /** Called on every successful open, including automatic reconnects (used to re-JOIN/WATCH) */
+  private openHandler: (() => void) | null = null;
+
   /**
    * Establishes a WebSocket connection to the specified URL
    * 
@@ -91,6 +94,7 @@ export class WebSocketService {
           console.log('[WebSocket] Connected successfully');
           this.reconnectAttempts = 0; // Reset reconnect counter on successful connection
           this.startPing();
+          this.openHandler?.();
           resolve();
         };
 
@@ -171,6 +175,8 @@ export class WebSocketService {
   disconnect() {
     this.stopPing();
     if (this.ws) {
+      // Intentional close: don't let onclose schedule an automatic reconnect
+      this.ws.onclose = null;
       this.ws.close();
       this.ws = null;
     }
@@ -244,6 +250,25 @@ export class WebSocketService {
    * 
    * @returns {boolean} True if connected and ready to send messages
    */
+  /**
+   * Registers a callback run each time the socket opens, so the room
+   * subscription is restored after an automatic reconnect
+   */
+  onOpen(handler: (() => void) | null) {
+    this.openHandler = handler;
+  }
+
+  /**
+   * Sends a facilitator action (reveal / hide / reset) with the host token
+   */
+  sendHostAction(
+    type: MessageType.SHOW_ESTIMATES | MessageType.HIDE_ESTIMATES | MessageType.DELETE_ESTIMATES,
+    roomId: string,
+    hostToken: string
+  ) {
+    this.send({ type, payload: { roomId, hostToken } });
+  }
+
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
