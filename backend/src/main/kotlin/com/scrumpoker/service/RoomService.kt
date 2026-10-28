@@ -101,6 +101,9 @@ class RoomService {
     // Grace period for disconnected users (5 minutes in milliseconds)
     private val DISCONNECT_GRACE_PERIOD_MS = 5 * 60 * 1000L
 
+    /** Time source for the grace period; replaced in tests to simulate time passing */
+    internal var clock: () -> Long = System::currentTimeMillis
+
     /** Logs current memory usage for monitoring */
     private fun logMemoryUsage() {
         val totalUsers = userSessions.size
@@ -131,7 +134,7 @@ class RoomService {
      */
     @Scheduled(fixedRate = 60000) // Run every 60 seconds
     fun cleanupDisconnectedUsers() {
-        val currentTime = System.currentTimeMillis()
+        val currentTime = clock()
         var cleanedUsers = 0
 
         // Find users who have been disconnected longer than grace period
@@ -366,7 +369,7 @@ class RoomService {
         // Find the user in our session tracking
         userSessions[userId]?.let { user ->
             // Mark user as disconnected with current timestamp
-            user.disconnectedAt = System.currentTimeMillis()
+            user.disconnectedAt = clock()
 
             // Log the disconnection with grace period info
             logger.info(

@@ -25,6 +25,13 @@ class MemoryLeakPreventionTest {
         roomService = RoomService()
     }
 
+    /** Moves the service clock past the reconnect grace period and runs the scheduled cleanup */
+    private fun expireGracePeriod() {
+        val afterGracePeriod = System.currentTimeMillis() + 5 * 60 * 1000L + 1
+        roomService.clock = { afterGracePeriod }
+        roomService.cleanupDisconnectedUsers()
+    }
+
     /** Test that empty rooms are properly cleaned up to prevent memory leaks */
     @Test
     fun `should clean up empty rooms`() {
@@ -38,8 +45,12 @@ class MemoryLeakPreventionTest {
 
         // When - All users leave their rooms
         roomService.leaveRoom(user1.id)
-        roomService.leaveRoom(user3.id) // This should clean up room-1
-        roomService.leaveRoom(user2.id) // This should clean up room-2
+        roomService.leaveRoom(user3.id)
+        roomService.leaveRoom(user2.id)
+
+        // Rooms are kept during the reconnect grace period
+        Assertions.assertEquals(2, roomService.getAllRooms().size)
+        expireGracePeriod()
 
         // Then - All rooms should be cleaned up
         Assertions.assertEquals(0, roomService.getAllRooms().size)
@@ -138,8 +149,9 @@ class MemoryLeakPreventionTest {
         val user1 = roomService.joinRoom("Alice", "room-1")
         val user2 = roomService.joinRoom("Bob", "room-1")
 
-        // When - Remove one user properly
+        // When - Remove one user properly (after the reconnect grace period)
         roomService.leaveRoom(user1.id)
+        expireGracePeriod()
 
         // Then - Data should remain consistent
         Assertions.assertEquals(1, roomService.getAllRooms().size)
@@ -162,6 +174,7 @@ class MemoryLeakPreventionTest {
 
         // When - All users leave
         users.forEach { userId -> roomService.leaveRoom(userId) }
+        expireGracePeriod()
 
         // Then - All rooms should be cleaned up
         Assertions.assertEquals(0, roomService.getAllRooms().size)
@@ -173,6 +186,7 @@ class MemoryLeakPreventionTest {
         // Given - Clean system
         roomService.joinRoom("Alice", "room-1")
         roomService.leaveRoom(roomService.getUsersByRoom("room-1")[0].id)
+        expireGracePeriod()
 
         // When - Run maintenance cleanup multiple times
         roomService.performMaintenanceCleanup()
