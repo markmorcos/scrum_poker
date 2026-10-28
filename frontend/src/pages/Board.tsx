@@ -10,7 +10,7 @@
  * handed to the facilitator's phone through a second QR code.
  */
 import React, { useCallback, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ConnectionStatus } from "../components/ConnectionStatus";
 import { PlayerGrid } from "../components/PlayerGrid";
 import { QrCode } from "../components/QrCode";
@@ -108,9 +108,18 @@ export const Board: React.FC = () => {
               Facilitate from your phone
             </button>
           ) : (
-            <span className="rounded-full bg-gray-200 dark:bg-dark-surface px-3 py-1 text-xs text-gray-600 dark:text-dark-text-secondary">
-              View only
-            </span>
+            <div className="flex flex-col items-center gap-3">
+              <span className="rounded-full bg-gray-200 dark:bg-dark-surface px-3 py-1 text-xs text-gray-600 dark:text-dark-text-secondary">
+                View only
+              </span>
+              {/* People who open the board link on their own device usually want to vote */}
+              <Link
+                to={`/room/${encodeURIComponent(roomId)}`}
+                className="rounded-xl bg-blue-600 dark:bg-blue-700 px-6 py-3 text-lg font-semibold text-white hover:bg-blue-700 dark:hover:bg-blue-800 transition-colors duration-200"
+              >
+                Join and vote
+              </Link>
+            </div>
           )}
         </aside>
 

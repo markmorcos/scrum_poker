@@ -102,6 +102,28 @@ describe("Board", () => {
 
     expect(await screen.findByText("View only")).toBeInTheDocument();
     expect(screen.queryByText("Reveal cards")).not.toBeInTheDocument();
+
+    // A non-host who opened the board link can jump to the voting screen
+    const joinLink = screen.getByRole("link", { name: "Join and vote" });
+    expect(joinLink).toHaveAttribute("href", "/room/happy-panda");
+
+    act(() => joinLink.click());
+    await waitFor(() =>
+      expect(fake.sent.some((m) => m.type === MessageType.JOIN)).toBe(true)
+    );
+  });
+
+  it("does not show the join button to the facilitator", async () => {
+    renderAt("/board/happy-panda");
+    await waitFor(() => expect(fake.sent.length).toBeGreaterThan(0));
+
+    act(() => {
+      fake.emit(MessageType.WATCH, { isHost: true, hostToken: "secret-token" });
+      fake.emit(MessageType.ROOM_UPDATE, roomState());
+    });
+
+    expect(await screen.findByText("Reveal cards")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Join and vote" })).not.toBeInTheDocument();
   });
 
   it("stores the host token and sends it with reveal", async () => {
