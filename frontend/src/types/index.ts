@@ -84,7 +84,6 @@ export interface RoomState {
 export enum MessageType {
   /** User requests to join a poker room */
   JOIN = 'JOIN',
-  WATCH = 'WATCH',
   
   /** User submits their story point estimate */
   VOTE = 'VOTE',

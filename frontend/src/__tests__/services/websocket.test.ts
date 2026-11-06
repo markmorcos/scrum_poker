@@ -178,16 +178,4 @@ describe('WebSocketService lifecycle', () => {
       global.WebSocket = original;
     }
   });
-
-  it('sends facilitator actions with the host token', () => {
-    const service = new WebSocketService();
-    const send = vi.spyOn(service, 'send').mockImplementation(() => {});
-
-    service.sendHostAction(MessageType.SHOW_ESTIMATES, 'happy-panda', 'secret');
-
-    expect(send).toHaveBeenCalledWith({
-      type: MessageType.SHOW_ESTIMATES,
-      payload: { roomId: 'happy-panda', hostToken: 'secret' },
-    });
-  });
 });

@@ -30,10 +30,8 @@ import {
   Routes,
   useParams,
 } from "react-router-dom";
-import { Board } from "./pages/Board";
 import { NameEntry } from "./pages/NameEntry";
 import { PokerRoom } from "./pages/PokerRoom";
-import { captureHostTokenFromUrl } from "./utils/host";
 
 /**
  * Protected Room Route Component
@@ -54,9 +52,6 @@ function ProtectedRoomRoute({
   setUserId,
 }: ProtectedRoomRouteProps) {
   const { roomId } = useParams<{ roomId: string }>();
-
-  // Keep a facilitator ?host= token across the name-entry redirect
-  if (roomId) captureHostTokenFromUrl(roomId);
 
   if (userName) {
     return (
@@ -80,6 +75,11 @@ function ProtectedRoomRoute({
  *
  * @returns {JSX.Element} The complete application with routing and layout
  */
+function BoardRedirect() {
+  const { roomId } = useParams<{ roomId: string }>();
+  return <Navigate to={`/room/${roomId}`} replace />;
+}
+
 function App() {
   // Global state for user information
   // Initialize from localStorage if available
@@ -108,8 +108,8 @@ function App() {
             element={<NameEntry onNameSubmit={(name) => setUserName(name)} />}
           />
 
-          {/* Board Route - shared screen with QR code, no name needed */}
-          <Route path="/board/:roomId" element={<Board />} />
+          {/* Old board links (/board/:roomId) now open the room itself */}
+          <Route path="/board/:roomId" element={<BoardRedirect />} />
 
           {/* Protected Route - Poker Room Page */}
           {/* Users can only access this if they have provided a name */}
