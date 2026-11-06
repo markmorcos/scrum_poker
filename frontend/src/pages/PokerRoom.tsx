@@ -1,25 +1,27 @@
 /**
- * PokerRoom.tsx - Mobile voting screen
+ * PokerRoom.tsx - The room page (/room/:roomId)
  *
- * What participants see after scanning the board's QR code: a large card
- * grid to vote with, the round status, and the results once revealed.
- * The room itself (everyone's cards) lives on the shared board.
+ * Everyone in a room sees the same page, whether it is on a phone, a laptop
+ * or the shared screen: the QR code to invite people, who has voted (and
+ * what, once revealed), a card grid to vote with, and Reveal / New round
+ * buttons that anyone can press.
  *
- * The facilitator's phone (opened through the board's facilitator QR, which
- * carries the host token) additionally gets a bottom bar to reveal and start
- * a new round.
+ * Phones get a single column (cards first, players below, the QR code in a
+ * collapsible "Invite people" card). Laptops and big screens get the cards
+ * next to a panel with the QR code and player tiles.
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ConnectionStatus } from "../components/ConnectionStatus";
 import { PlayerGrid } from "../components/PlayerGrid";
 import { PokerCard } from "../components/PokerCard";
+import { QrCode } from "../components/QrCode";
 import { isConsensus, useConsensusConfetti } from "../hooks/useConsensusConfetti";
 import { useRoomConnection } from "../hooks/useRoomConnection";
 import { wsService } from "../services/websocket";
 import { FIBONACCI_VALUES, MessageType, SPECIAL_VALUES } from "../types";
 import { useWakeLock, vibrate } from "../utils/device";
-import { captureHostTokenFromUrl, getStoredHostToken } from "../utils/host";
+import { getJoinUrl } from "../utils/roomLinks";
 
 interface PokerRoomProps {
   userName: string;
@@ -32,11 +34,6 @@ const allCards = [...FIBONACCI_VALUES, ...SPECIAL_VALUES];
 export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserId }) => {
   const { roomId = "" } = useParams<{ roomId: string }>();
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
-  const [hostToken] = useState<string | null>(() => {
-    captureHostTokenFromUrl(roomId);
-    return getStoredHostToken(roomId);
-  });
-  const [isHost, setIsHost] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const voteKey = `scrumPokerVote_${roomId}_${userName}`;
@@ -49,10 +46,9 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
         name: userName,
         roomId,
         userId: localStorage.getItem(userIdKey) || undefined,
-        hostToken: hostToken ?? undefined,
       },
     });
-  }, [userName, roomId, userIdKey, hostToken]);
+  }, [userName, roomId, userIdKey]);
 
   const connection = useRoomConnection({
     connectKey: `${roomId}|${userName}`,
@@ -63,7 +59,6 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
           setUserId(payload.userId);
           localStorage.setItem(userIdKey, payload.userId);
         }
-        setIsHost(Boolean(payload.isHost));
       },
       [MessageType.ERROR]: (payload) => {
         setErrorMessage(payload?.error ?? "Something went wrong");
@@ -164,19 +159,55 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
   }
 
   const votedCount = roomState.users.filter((u) => u.hasVoted).length;
-  const canControl = isHost && hostToken !== null;
+  const joinUrl = getJoinUrl(roomId);
+  const consensusValue = isConsensus(roomState)
+    ? roomState.users.find((u) => u.hasVoted)?.estimate
+    : undefined;
 
-  const hostAction = (
+  const roundAction = (
     type: MessageType.SHOW_ESTIMATES | MessageType.HIDE_ESTIMATES | MessageType.DELETE_ESTIMATES
   ) => {
-    if (!hostToken) return;
     vibrate();
     if (type === MessageType.DELETE_ESTIMATES) setSelectedCard(null);
-    wsService.sendHostAction(type, roomId, hostToken);
+    wsService.send({ type, payload: { roomId } });
   };
 
+  // Compact player list for phones: ✓ / … before the reveal, estimates after
+  const playerList = (
+    <section data-testid="player-list" className="rounded-xl bg-white dark:bg-dark-surface p-4 shadow lg:hidden">
+      {roomState.showEstimates && consensusValue && (
+        <p className="mb-3 text-center text-lg font-semibold text-green-700 dark:text-green-300">
+          🎉 Everyone agrees!
+        </p>
+      )}
+      <ul className="divide-y divide-gray-100 dark:divide-dark-border">
+        {roomState.users.map((user) => (
+          <li key={user.id} className="flex items-center justify-between py-2">
+            <span className={`truncate ${user.id === userId ? "font-semibold" : ""} text-gray-900 dark:text-dark-text`}>
+              {user.name}
+              {user.id === userId && <span className="ml-1 text-xs text-blue-600 dark:text-blue-400">(you)</span>}
+            </span>
+            {roomState.showEstimates ? (
+              <span className="ml-3 min-w-[2.5rem] rounded-md bg-blue-600 dark:bg-blue-300 px-2 py-1 text-center font-bold text-white dark:text-gray-900">
+                {user.estimate ?? "–"}
+              </span>
+            ) : (
+              <span
+                className={`ml-3 text-sm font-medium ${
+                  user.hasVoted ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-dark-text-secondary"
+                }`}
+              >
+                {user.hasVoted ? "✓ voted" : "…"}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+
   return (
-    <div className={`min-h-screen ${canControl ? "pb-28" : "pb-6"}`}>
+    <div className="min-h-screen pb-28">
       {connection.showReconnectingBanner && (
         <div className="bg-blue-50 dark:bg-blue-900/30 p-2 text-center text-sm font-medium text-blue-600 dark:text-blue-400">
           Reconnecting to room...
@@ -188,14 +219,7 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
         <div className="mx-auto flex max-w-md lg:max-w-6xl items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate font-mono text-xs text-gray-500 dark:text-dark-text-secondary">{roomId}</p>
-            <p className="truncate font-semibold text-gray-900 dark:text-dark-text">
-              {userName}
-              {canControl && (
-                <span className="ml-2 rounded-full bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-                  Facilitator
-                </span>
-              )}
-            </p>
+            <p className="truncate font-semibold text-gray-900 dark:text-dark-text">{userName}</p>
           </div>
           <span
             data-testid="round-status"
@@ -213,26 +237,7 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
       <main className="mx-auto max-w-md lg:max-w-6xl px-4 pt-5 lg:grid lg:grid-cols-[minmax(0,28rem)_1fr] lg:items-start lg:gap-10">
         <div className="space-y-5">
           {roomState.showEstimates ? (
-            <section className="rounded-xl bg-white dark:bg-dark-surface p-4 shadow lg:hidden">
-              {isConsensus(roomState) && (
-                <p className="mb-3 text-center text-lg font-semibold text-green-700 dark:text-green-300">
-                  🎉 Everyone agrees!
-                </p>
-              )}
-              <ul className="divide-y divide-gray-100 dark:divide-dark-border">
-                {roomState.users.map((user) => (
-                  <li key={user.id} className="flex items-center justify-between py-2">
-                    <span className={`truncate ${user.id === userId ? "font-semibold" : ""} text-gray-900 dark:text-dark-text`}>
-                      {user.name}
-                      {user.id === userId && <span className="ml-1 text-xs text-blue-600 dark:text-blue-400">(you)</span>}
-                    </span>
-                    <span className="ml-3 min-w-[2.5rem] rounded-md bg-blue-600 dark:bg-blue-300 px-2 py-1 text-center font-bold text-white dark:text-gray-900">
-                      {user.estimate ?? "–"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+            playerList
           ) : (
             <p className="text-center text-gray-600 dark:text-dark-text-secondary">
               {selectedCard ? (
@@ -256,10 +261,33 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
               />
             ))}
           </div>
+
+          {!roomState.showEstimates && playerList}
+
+          {/* Phones: invite others by letting them scan this screen */}
+          <details className="group rounded-xl bg-white dark:bg-dark-surface p-4 shadow lg:hidden">
+            <summary className="cursor-pointer list-none font-semibold text-gray-900 dark:text-dark-text">
+              Invite people <span className="text-sm font-normal text-gray-500 dark:text-dark-text-secondary">· show this QR code</span>
+            </summary>
+            <div className="mt-4 flex flex-col items-center gap-2 text-center">
+              <QrCode value={joinUrl} size={180} label={`Join room ${roomId}`} />
+              <p className="font-mono font-semibold text-gray-900 dark:text-dark-text">{roomId}</p>
+              <p className="break-all text-xs text-gray-500 dark:text-dark-text-secondary">{joinUrl}</p>
+            </div>
+          </details>
         </div>
 
-        {/* Laptop: live player panel next to the cards, like a mini board */}
-        <aside data-testid="player-panel" className="hidden lg:block lg:sticky lg:top-24 space-y-4">
+        {/* Laptops and the shared screen: QR code and player tiles next to the cards */}
+        <aside data-testid="player-panel" className="hidden lg:block lg:sticky lg:top-24 space-y-5">
+          <div className="flex items-center gap-5 rounded-xl bg-white dark:bg-dark-surface p-4 shadow">
+            <QrCode value={joinUrl} size={150} label={`Join room ${roomId}`} />
+            <div className="min-w-0">
+              <p className="text-sm uppercase tracking-wide text-gray-500 dark:text-dark-text-secondary">Scan to join</p>
+              <p className="font-mono text-2xl font-semibold text-gray-900 dark:text-dark-text">{roomId}</p>
+              <p className="mt-1 break-all text-sm text-gray-500 dark:text-dark-text-secondary">{joinUrl}</p>
+            </div>
+          </div>
+
           <div className="flex items-baseline justify-between">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text">
               {roomState.showEstimates ? "Results" : "Players"}
@@ -268,9 +296,9 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
               {votedCount} / {roomState.users.length} voted
             </span>
           </div>
-          {roomState.showEstimates && isConsensus(roomState) && (
+          {roomState.showEstimates && consensusValue && (
             <div className="rounded-xl bg-green-100 dark:bg-green-900/30 p-3 text-center text-lg font-semibold text-green-800 dark:text-green-300">
-              🎉 Everyone agrees on {roomState.users.find((u) => u.hasVoted)?.estimate}
+              🎉 Everyone agrees on {consensusValue}
             </div>
           )}
           <PlayerGrid
@@ -290,31 +318,29 @@ export const PokerRoom: React.FC<PokerRoomProps> = ({ userName, userId, setUserI
         </div>
       )}
 
-      {/* Facilitator controls */}
-      {canControl && (
-        <div
-          data-testid="host-bar"
-          className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface px-4 pt-3"
-          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
-        >
-          <div className="mx-auto flex max-w-md lg:max-w-6xl gap-3">
-            <button
-              onClick={() => hostAction(MessageType.DELETE_ESTIMATES)}
-              className="flex-1 rounded-xl border border-gray-300 dark:border-dark-border py-3 font-semibold text-gray-700 dark:text-dark-text"
-            >
-              New round
-            </button>
-            <button
-              onClick={() =>
-                hostAction(roomState.showEstimates ? MessageType.HIDE_ESTIMATES : MessageType.SHOW_ESTIMATES)
-              }
-              className="flex-1 rounded-xl bg-blue-600 dark:bg-blue-700 py-3 font-semibold text-white"
-            >
-              {roomState.showEstimates ? "Hide" : "Reveal"}
-            </button>
-          </div>
+      {/* Round controls: anyone in the room can reveal or start a new round */}
+      <div
+        data-testid="round-controls"
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface px-4 pt-3"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        <div className="mx-auto flex max-w-md lg:max-w-6xl gap-3">
+          <button
+            onClick={() => roundAction(MessageType.DELETE_ESTIMATES)}
+            className="flex-1 rounded-xl border border-gray-300 dark:border-dark-border py-3 font-semibold text-gray-700 dark:text-dark-text"
+          >
+            New round
+          </button>
+          <button
+            onClick={() =>
+              roundAction(roomState.showEstimates ? MessageType.HIDE_ESTIMATES : MessageType.SHOW_ESTIMATES)
+            }
+            className="flex-1 rounded-xl bg-blue-600 dark:bg-blue-700 py-3 font-semibold text-white"
+          >
+            {roomState.showEstimates ? "Hide cards" : "Reveal cards"}
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 };

@@ -7,9 +7,9 @@ A real-time collaborative estimation tool for distributed software teams using t
 ## 🚀 Features
 
 - Real-time WebSocket communication
-- **Shared-screen board** - "Start session on this screen" opens a board for the TV/projector with a QR code, live voting progress and the revealed cards
-- **Vote from your phone** - Everyone scans the QR code and votes from a mobile-first card screen; your name is remembered for next time
-- **Facilitator controls** - Only the board and the facilitator's phone (opened through the board's "Facilitate from your phone" QR code) can reveal cards or start a new round. The facilitator token lives in server memory, no database needed
+- **One shared room page** - Everyone at `/room/<name>` (phone, laptop or the TV) sees the same thing: a QR code to invite others, who has voted, the cards, and the results
+- **Join by QR code** - Scan the code from any screen in the room to join from your phone; your name is remembered for next time
+- **Anyone can reveal or reset** - Reveal / Hide cards and New round buttons for every participant
 - **Room-based sessions** - Rooms get unique animal names (e.g., "happy-panda"); you can also join by typing the room name
 - **Seamless reconnection** - 5-minute grace period keeps you in the room when switching tabs, minimizing browser, or brief network interruptions
 - **Automatic session recovery** - Your vote and room state are preserved during disconnections

@@ -258,17 +258,6 @@ export class WebSocketService {
     this.openHandler = handler;
   }
 
-  /**
-   * Sends a facilitator action (reveal / hide / reset) with the host token
-   */
-  sendHostAction(
-    type: MessageType.SHOW_ESTIMATES | MessageType.HIDE_ESTIMATES | MessageType.DELETE_ESTIMATES,
-    roomId: string,
-    hostToken: string
-  ) {
-    this.send({ type, payload: { roomId, hostToken } });
-  }
-
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }

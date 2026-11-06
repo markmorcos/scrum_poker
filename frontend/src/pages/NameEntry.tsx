@@ -1,12 +1,10 @@
 /**
  * NameEntry.tsx - Landing page
  *
- * Two ways in:
- * 1. Start a session on the shared screen: creates an animal-named room
- *    (e.g. "happy-panda") and opens its board with a QR code. No name needed.
- * 2. Join as a voter: enter your name (remembered for next time) and the
- *    room name. People who scan the board's QR code land here with the room
- *    pre-selected, or skip straight to voting if their name is remembered.
+ * Enter your name (remembered for next time), then either create a new
+ * animal-named room (e.g. "happy-panda") or join an existing one by name.
+ * People who open a room link or scan a room's QR code land here with the
+ * room pre-selected, or go straight in if their name is remembered.
  */
 
 import React, { useEffect } from "react";
@@ -118,6 +116,8 @@ export const NameEntry: React.FC<NameEntryProps> = ({ onNameSubmit }) => {
     formState: { errors },
     watch,
     setValue,
+    trigger,
+    getValues,
   } = useForm<JoinFormData>();
 
   const navigate = useNavigate();
@@ -140,8 +140,11 @@ export const NameEntry: React.FC<NameEntryProps> = ({ onNameSubmit }) => {
     }
   }, [redirectRoomId, storedName, onNameSubmit, navigate, setValue]);
 
-  const handleStartSession = () => {
-    navigate(`/board/${generateRoomCode()}`);
+  // Creating a room only needs a name, so validate just that field
+  const handleCreateRoom = async () => {
+    if (!(await trigger("name"))) return;
+    onNameSubmit(getValues("name").trim());
+    navigate(`/room/${generateRoomCode()}`);
   };
 
   const handleJoin = (data: JoinFormData) => {
@@ -166,19 +169,12 @@ export const NameEntry: React.FC<NameEntryProps> = ({ onNameSubmit }) => {
                 Join room <span className="font-mono font-bold">{redirectRoomId}</span>
               </>
             ) : (
-              "Estimate together: one screen, everyone's phone"
+              "Estimate together, everyone from their own phone"
             )}
           </p>
         </div>
 
-        {/* Join as a voter */}
         <form onSubmit={handleSubmit(handleJoin)} className="space-y-4">
-          {!redirectRoomId && (
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-text-secondary">
-              Join a room
-            </h2>
-          )}
-
           <div>
             <div className="flex items-center justify-between mb-2">
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-dark-text">
@@ -215,6 +211,25 @@ export const NameEntry: React.FC<NameEntryProps> = ({ onNameSubmit }) => {
           </div>
 
           {!redirectRoomId && (
+            <>
+              <button
+                type="button"
+                onClick={handleCreateRoom}
+                disabled={!watchedName}
+                className="w-full flex justify-center py-3 px-4 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-dark-bg focus:ring-blue-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Create a new room
+              </button>
+
+              <div className="flex items-center gap-3 pt-4 text-sm text-gray-500 dark:text-dark-text-secondary">
+                <span className="h-px flex-1 bg-gray-200 dark:bg-dark-border" />
+                or join a room
+                <span className="h-px flex-1 bg-gray-200 dark:bg-dark-border" />
+              </div>
+            </>
+          )}
+
+          {!redirectRoomId && (
             <div>
               <label htmlFor="roomCode" className="block text-sm font-medium text-gray-700 dark:text-dark-text mb-2">
                 Room name
@@ -244,33 +259,16 @@ export const NameEntry: React.FC<NameEntryProps> = ({ onNameSubmit }) => {
           <button
             type="submit"
             disabled={!watchedName}
-            className="w-full flex justify-center py-3 px-4 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-dark-bg focus:ring-blue-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`w-full flex justify-center py-3 px-4 text-base font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-dark-bg focus:ring-blue-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+              redirectRoomId
+                ? "border border-transparent text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
+                : "border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text bg-white dark:bg-dark-surface hover:bg-gray-50 dark:hover:bg-gray-600"
+            }`}
           >
-            Join and vote
+            {redirectRoomId ? "Join and vote" : "Join room"}
           </button>
         </form>
 
-        {/* Start a session on the shared screen */}
-        {!redirectRoomId && (
-          <div className="space-y-3 border-t border-gray-200 dark:border-dark-border pt-8">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-text-secondary">
-              Running the session?
-            </h2>
-            <button
-              type="button"
-              onClick={handleStartSession}
-              className="w-full flex justify-center items-center py-3 px-4 border border-gray-300 dark:border-dark-border text-base font-medium rounded-md text-gray-700 dark:text-dark-text bg-white dark:bg-dark-surface hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-dark-bg focus:ring-blue-500 transition-colors duration-200"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              Start session on this screen
-            </button>
-            <p className="text-sm text-gray-500 dark:text-dark-text-secondary text-center">
-              Open this on the TV or projector. Everyone joins by scanning the QR code.
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );
